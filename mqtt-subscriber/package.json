@@ -1,0 +1,15 @@
+{
+  "name": "mqtt-subscriber",
+  "version": "1.0.0",
+  "description": "MQTT subscriber for ESP32 device status updates to Directus",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "node --watch index.js"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "dotenv": "^16.3.1",
+    "mqtt": "^5.3.0"
+  }
+}
