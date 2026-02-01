@@ -123,6 +123,21 @@ app.get('/health', (req, res) => {
 // ===== POLLING: Fallback for unreliable Directus Flow =====
 let isPolling = false;
 
+// Track recently published commands to avoid duplicate publishes
+// Key: command_id, Value: timestamp when published
+const recentlyPublished = new Map();
+const PUBLISH_COOLDOWN = 30000; // 30 seconds before re-publishing same command
+
+// Clean up old entries every minute
+setInterval(() => {
+  const now = Date.now();
+  for (const [id, timestamp] of recentlyPublished) {
+    if (now - timestamp > PUBLISH_COOLDOWN) {
+      recentlyPublished.delete(id);
+    }
+  }
+}, 60000);
+
 async function pollPendingCommands() {
   if (!directusApi || !mqttConnected || isPolling) return;
   isPolling = true;
@@ -144,6 +159,11 @@ async function pollPendingCommands() {
     console.log(`[MQTT Bridge] Polling found ${commands.length} pending command(s)`);
 
     for (const cmd of commands) {
+      // Skip if recently published (within cooldown period)
+      if (recentlyPublished.has(cmd.id)) {
+        continue;
+      }
+
       const deviceMac = cmd.device_id?.device_mac;
       if (!deviceMac) {
         console.warn(`[MQTT Bridge] Command ${cmd.id} has no device_mac, skipping`);
@@ -169,10 +189,11 @@ async function pollPendingCommands() {
       try {
         await publishToMqtt(topic, payload);
 
-        // Update status to processing
-        await directusApi.patch(`/items/device_commands/${cmd.id}`, {
-          status: 'processing'
-        });
+        // Track this command to avoid duplicate publishes
+        recentlyPublished.set(cmd.id, Date.now());
+
+        // NOTE: Do NOT update status here. Status will be updated by mqtt-subscriber
+        // when ESP32 sends ACK (processing/completed/failed).
 
         console.log(`[MQTT Bridge] Command ${cmd.id} (${cmd.command_type}) → ${deviceMac}`);
       } catch (err) {
